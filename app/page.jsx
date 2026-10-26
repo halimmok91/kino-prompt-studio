@@ -155,7 +155,7 @@ export default function Home() {
           </div>
         </section>
       </section>
-      <footer className="footer"><span>CRAFTED FOR <b>SEEDANCE 2.5</b></span><span>LESS PROMPTING. MORE DIRECTING.</span></footer>
+      <footer className="footer"><span>CRAFTED FOR <b>SEEDANCE 2.5</b></span><nav className="socials" aria-label="Social profiles"><a href="https://www.facebook.com/halim91" target="_blank" rel="noopener noreferrer">Facebook <span aria-hidden="true">↗</span></a><a href="https://www.threads.com/@halimmok.exe" target="_blank" rel="noopener noreferrer">Threads <span aria-hidden="true">↗</span></a></nav></footer>
     </main>
     <div className={`toast ${toast ? 'show' : ''}`} role="status" aria-live="polite">{toast}</div>
   </>;

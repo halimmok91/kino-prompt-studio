@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { OPTIONS } from '../lib/prompt';
+import { CONTINUITY_FIELDS, PACING, STORY_DURATIONS, TRANSITIONS } from '../lib/story';
 
 const styles = [...OPTIONS.style, 'custom'];
 const initialResult = 'Your next scene starts here.\n\nDescribe an idea on the left. Kino will shape the action, camera, atmosphere, and visual continuity into a production-ready direction.';
@@ -54,7 +55,42 @@ function Scene() {
   return <canvas ref={canvasRef} aria-hidden="true" />;
 }
 
+const fieldLabels = { character: 'Character appearance', wardrobe: 'Wardrobe', props: 'Recurring props', environment: 'Environment', style: 'Visual style', details: 'Other recurring details' };
+
+function StoryResults({ story, setStory, direction, copy, busy, regenerate, finalize, tokenReady }) {
+  const [open, setOpen] = useState(0);
+  if (!story && !busy) return <div className="story-empty"><p className="eyebrow">Long story mode</p><h3>Your story.<br /><em>Your direction.</em></h3><p>Shape the outline first. Adjust every scene, lock continuity, then create standalone Seedance prompts.</p></div>;
+  if (!story) return <div className="story-empty"><h3>Planning your outline…</h3><p>You will review and edit every scene before Kino writes the prompts.</p></div>;
+  const outlined = !story.continuity;
+  const seconds = story.scenes.reduce((total, scene) => total + Number.parseInt(scene.duration, 10), 0);
+  const update = (index, key, value) => setStory(current => ({ ...current, scenes: current.scenes.map((scene, i) => i === index ? { ...scene, [key]: value } : scene) }));
+  const move = (index, offset) => setStory(current => {
+    const scenes = [...current.scenes], target = index + offset;
+    [scenes[index], scenes[target]] = [scenes[target], scenes[index]];
+    return { ...current, scenes };
+  });
+  const add = () => setStory(current => ({ ...current, scenes: [...current.scenes, { title: 'New scene', summary: 'Describe this scene’s role in the story.', duration: '10s', transition: 'Direct cut', camera: direction.camera, angle: direction.angle, composition: direction.composition, light: direction.light, mood: direction.mood, audio: direction.audio, action: '', locks: [], prompt: '' }] }));
+  const continuityText = () => outlined ? '' : CONTINUITY_FIELDS.map(key => `${fieldLabels[key]}: ${story.continuity[key]}`).join('\n');
+  const completeStory = () => `${outlined ? 'STORY OUTLINE' : `CONTINUITY GUIDE\n${continuityText()}`}\n\n${story.scenes.map((scene, index) => `SCENE ${index + 1}: ${scene.title}\n${scene.summary}\nDuration: ${scene.duration}\n${scene.action}\n\n${scene.prompt}`).join('\n\n')}`;
+  return <div className="story-results"><p className="story-plan-meta">{seconds}s planned · {story.scenes.length} standalone clips · {outlined ? 'outline' : 'editable prompts'}</p>
+    {outlined ? <section className="outline-note"><span className="step">Step 02 — Approve your direction</span><h3>Edit the outline</h3><p>Change the plot, pacing, scene controls, and continuity locks before generating prompts.</p></section> : <section className="bible"><div className="story-heading"><div><span className="step">Shared across every scene</span><h3>Continuity guide</h3></div><button type="button" className="copy-main" onClick={() => copy(continuityText())}>Copy continuity <span aria-hidden="true">⧉</span></button></div><div className="continuity-grid">{CONTINUITY_FIELDS.map(key => <label key={key}>{fieldLabels[key]}<textarea value={story.continuity[key]} maxLength={800} onChange={event => setStory(current => ({ ...current, continuity: { ...current.continuity, [key]: event.target.value } }))} /></label>)}</div></section>}
+    <div className="scene-list">{story.scenes.map((scene, index) => <details className="story-scene" key={index} open={open === index} onToggle={event => { if (event.currentTarget.open) setOpen(index); }}><summary><span className="scene-number">{String(index + 1).padStart(2, '0')}</span><span><strong>{scene.title}</strong><small>{scene.summary}</small></span></summary><div className="scene-editor"><div className="scene-tools"><button type="button" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move scene ${index + 1} up`}>↑</button><button type="button" disabled={index === story.scenes.length - 1} onClick={() => move(index, 1)} aria-label={`Move scene ${index + 1} down`}>↓</button><button type="button" onClick={() => setStory(current => { const scenes = [...current.scenes]; scenes.splice(index + 1, 0, { ...scene, locks: [...scene.locks], title: `${scene.title} copy`.slice(0, 120), prompt: '' }); return { ...current, scenes }; })} disabled={story.scenes.length >= 12 || seconds + Number.parseInt(scene.duration, 10) > 180}>Duplicate</button><button type="button" disabled={story.scenes.length <= 1} onClick={() => setStory(current => ({ ...current, scenes: current.scenes.filter((_, i) => i !== index) }))}>Remove</button></div>
+      <div className="scene-fields"><label>Title<input type="text" value={scene.title} maxLength={120} onChange={event => update(index, 'title', event.target.value)} /></label><label>Narrative purpose<input type="text" value={scene.summary} maxLength={500} onChange={event => update(index, 'summary', event.target.value)} /></label><label className="wide">Action & setting<textarea value={scene.action} maxLength={1200} onChange={event => update(index, 'action', event.target.value)} /></label>
+      {[['duration', 'Duration', OPTIONS.duration.filter(value => value !== '30s')], ['transition', 'Transition', TRANSITIONS], ['camera', 'Camera', OPTIONS.camera], ['angle', 'Angle', OPTIONS.angle], ['composition', 'Composition', OPTIONS.composition], ['light', 'Lighting', OPTIONS.light], ['mood', 'Mood', OPTIONS.mood]].map(([key, label, options]) => <label key={key}>{label}<select value={scene[key]} onChange={event => update(index, key, event.target.value)}>{![...options, ''].includes(scene[key]) && <option>{scene[key]}</option>}{options.map(value => <option key={value}>{value}</option>)}</select></label>)}<label className="wide">Audio<input type="text" value={scene.audio} maxLength={300} onChange={event => update(index, 'audio', event.target.value)} /></label></div>
+      <fieldset className="locks"><legend>Continuity locks</legend>{CONTINUITY_FIELDS.map(key => <label key={key}><input type="checkbox" checked={scene.locks.includes(key)} onChange={event => update(index, 'locks', event.target.checked ? [...scene.locks, key] : scene.locks.filter(item => item !== key))} />{fieldLabels[key]}</label>)}</fieldset>
+      {scene.prompt && <><div className="scene-editor-top"><span>Standalone {scene.duration} Seedance clip</span><button type="button" className="copy-main" onClick={() => copy(scene.prompt)}>Copy prompt <span aria-hidden="true">⧉</span></button></div><textarea className="prompt-editor" aria-label={`Scene ${index + 1} Seedance prompt`} value={scene.prompt} onChange={event => update(index, 'prompt', event.target.value)} maxLength={12000} /></>}
+      {!outlined && <div className="regenerate"><button type="button" disabled={busy || !tokenReady} onClick={() => regenerate(index, 'prompt')}>{busy === 'prompt-' + index ? 'Rewriting…' : 'Rewrite prompt only'}</button><button type="button" disabled={busy || !tokenReady} onClick={() => regenerate(index, 'full')}>{busy === 'full-' + index ? 'Regenerating…' : 'Regenerate scene'}</button></div>}
+    </div></details>)}</div>
+    <div className="story-actions"><button type="button" disabled={story.scenes.length >= 12 || seconds + 10 > 180} onClick={add}>+ Add scene</button><button type="button" onClick={() => copy(completeStory())}>Copy complete {outlined ? 'outline' : 'story'} ⧉</button></div>
+    {story && !tokenReady && <p className="story-note">Complete human verification again before generating or rewriting.</p>}
+    {outlined && <button type="button" className="generate finalize" disabled={busy || !tokenReady || story.scenes.some(scene => !scene.action.trim() || !scene.title.trim())} onClick={finalize}><span>{busy ? 'Writing all prompts…' : 'Approve outline & generate prompts'}</span><span>→</span></button>}
+    {!outlined && <p className="story-note">Locks constrain regeneration, not manual edits. Generate each clip separately, then assemble it in your video editor.</p>}</div>;
+}
+
 export default function Home() {
+  const [mode, setMode] = useState('single');
+  const [story, setStory] = useState();
+  const [storyDirection, setStoryDirection] = useState({});
   const [style, setStyle] = useState('Cinematic');
   const [ideaCount, setIdeaCount] = useState(0);
   const [tab, setTab] = useState('prompt');
@@ -65,6 +101,11 @@ export default function Home() {
   const [meta, setMeta] = useState('CINEMATIC · 16:9 · 1080P · GOLDEN HOUR');
   const [token, setToken] = useState('');
   const toastTimer = useRef();
+  const requestId = useRef(0);
+  const storyRef = useRef(story);
+  storyRef.current = story;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const turnstileRef = useRef();
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -103,25 +144,60 @@ export default function Home() {
   async function generate(event) {
     event.preventDefault(); setError('');
     if (siteKey && !token) return setError('Complete the human verification first.');
+    const id = ++requestId.current, submittedMode = mode;
     setBusy(true);
     const data = new FormData(event.currentTarget), direction = {};
     for (const [key, value] of data) direction[key] = value;
     if (direction.style === 'custom') direction.style = direction['style-custom'];
     for (const key of Object.keys(OPTIONS)) if (direction[key] === 'Custom…') direction[key] = direction[key + '-custom'];
+    if (submittedMode === 'story') direction.duration = '10s';
     try {
-      const response = await fetch('/api/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ direction, turnstileToken: token }) });
+      const response = await fetch(submittedMode === 'story' ? '/api/story' : '/api/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ direction, turnstileToken: token }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Could not create your prompt.');
-      setResults(payload); setTab('prompt');
-      if (innerWidth < 950) document.getElementById('result').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
+      if (id !== requestId.current || modeRef.current !== submittedMode) return;
+      if (submittedMode === 'story') { setStory(payload); setStoryDirection(direction); }
+      else { setResults(payload); setTab('prompt'); }
+      if (innerWidth < 950) document.querySelector(submittedMode === 'story' ? '.story-output' : '#result').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
       window.turnstile?.reset(); setToken('');
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+    } catch (err) { if (id === requestId.current && modeRef.current === submittedMode) setError(err.message); }
+    finally { if (id === requestId.current) { setBusy(false); window.turnstile?.reset(); setToken(''); } }
   }
 
-  async function copy() {
-    if (!results[tab]) return notify('Create a prompt first');
-    try { await navigator.clipboard.writeText(results[tab]); notify('Copied to clipboard'); }
+  async function storyRequest(body) {
+    const response = await fetch('/api/story' + (body.input?.index !== undefined ? '/scene' : ''), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, turnstileToken: token }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Could not update your story.');
+    return payload;
+  }
+
+  async function finalize() {
+    if (siteKey && !token) return setError('Complete the human verification first.');
+    const id = ++requestId.current; setBusy(true); setError('');
+    try {
+      const payload = await storyRequest({ stage: 'prompts', input: { direction: storyDirection, scenes: story.scenes } });
+      if (id !== requestId.current) return;
+      if (storyRef.current !== story) return setError('Your outline changed while generating. Review it and generate again; your edits were kept.');
+      setStory(payload);
+    } catch (err) { if (id === requestId.current) setError(err.message); }
+    finally { if (id === requestId.current) { setBusy(false); window.turnstile?.reset(); setToken(''); } }
+  }
+
+  async function regenerate(index, kind) {
+    if (siteKey && !token) return setError('Complete the human verification first.');
+    const id = ++requestId.current; setBusy(kind + '-' + index); setError('');
+    try {
+      const payload = await storyRequest({ input: { direction: storyDirection, story, index, kind } });
+      if (id !== requestId.current) return;
+      if (storyRef.current !== story) return setError('Your story changed while rewriting. Your edits were kept; try again.');
+      setStory(current => ({ ...current, scenes: current.scenes.map((scene, i) => i === index ? payload.scene : scene) }));
+    } catch (err) { if (id === requestId.current) setError(err.message); }
+    finally { if (id === requestId.current) { setBusy(false); window.turnstile?.reset(); setToken(''); } }
+  }
+
+  async function copy(text = results[tab]) {
+    if (!text) return notify('Create a prompt first');
+    try { await navigator.clipboard.writeText(text); notify('Copied to clipboard'); }
     catch { notify('Select the text to copy'); }
   }
 
@@ -130,20 +206,23 @@ export default function Home() {
     <main className="shell">
       <nav className="nav" aria-label="Main navigation"><a className="brand" href="#" aria-label="Kino home"><span className="brand-mark" aria-hidden="true" />KINO</a><div className="nav-right"><a className="nav-link" href="#studio">Prompt studio</a><span className="engine"><span className="status-dot" />Seedance 2.5</span></div></nav>
       <header className="hero"><div><p className="eyebrow">From imagination to motion</p><h1>Direct the extraordinary.<br /><em>One prompt at a time.</em></h1></div><p className="hero-copy">A considered workspace for crafting cinematic, precise prompts for Seedance 2.5.</p></header>
-      <section className="workspace" id="studio" aria-label="Prompt studio">
+      <section className="mode-switch" aria-label="Builder mode"><button type="button" aria-pressed={mode === 'single'} className={mode === 'single' ? 'active' : ''} onClick={() => { setMode('single'); setError(''); requestId.current++; setBusy(false); }}><span>01</span> Single scene<small>One precise Seedance prompt</small></button><button type="button" aria-pressed={mode === 'story'} className={mode === 'story' ? 'active' : ''} onClick={() => { setMode('story'); setError(''); requestId.current++; setBusy(false); }}><span>02</span> Long story<small>Your outline, your scene controls</small></button></section>
+      <section className={`workspace ${mode === 'story' ? 'story-workspace' : ''}`} id="studio" aria-label="Prompt studio">
         <form className="panel builder" id="builder" onSubmit={generate}>
-          <div className="panel-heading"><h2>Set the scene</h2><span className="step">01 — Your vision</span></div>
-          <div className="field"><div className="label-row"><label htmlFor="idea">Your idea</label><span className="hint">{ideaCount} / 800</span></div><textarea id="idea" name="idea" maxLength={800} required onChange={event => setIdeaCount(event.target.value.length)} placeholder="A lone traveller crosses a windswept rice field at dawn, distant mountains emerging through the mist…" /></div>
+          <div className="panel-heading"><h2>{mode === 'story' ? 'Set the story' : 'Set the scene'}</h2><span className="step">01 — Your vision</span></div>
+          <div className="field"><div className="label-row"><label htmlFor="idea">Your idea</label><span className="hint">{ideaCount} / 800</span></div><textarea id="idea" name="idea" maxLength={800} required onChange={event => setIdeaCount(event.target.value.length)} placeholder={mode === 'story' ? 'A young fisherman loses his lantern during a storm, follows its distant glow through the mangroves, and discovers who has been guiding him home…' : 'A lone traveller crosses a windswept rice field at dawn, distant mountains emerging through the mist…'} /></div>
           <div className="field"><span className="label" id="style-label">Visual language</span><div className="chips" role="group" aria-labelledby="style-label">{styles.map(item => <button type="button" className={`chip ${style === item ? 'active' : ''}`} key={item} aria-pressed={style === item} onClick={() => { setStyle(item); if (item === 'custom') requestAnimationFrame(() => document.getElementById('style-custom')?.focus()); }}>{item === 'custom' ? 'Custom…' : item}</button>)}</div><input type="hidden" name="style" value={style} />{style === 'custom' && <input type="text" id="style-custom" name="style-custom" maxLength={120} required placeholder="Describe your own visual language…" aria-label="Custom visual language" />}</div>
           <div className="field-row three"><Choice id="camera" label="Camera movement" options={OPTIONS.camera} custom /><Choice id="angle" label="Camera angle" options={OPTIONS.angle} custom /><Choice id="composition" label="Composition" options={OPTIONS.composition} custom /></div>
-          <div className="field-row three"><Choice id="light" label="Lighting" options={OPTIONS.light} custom /><Choice id="ratio" label="Frame" options={OPTIONS.ratio} /><Choice id="duration" label="Duration" options={OPTIONS.duration} /><Choice id="resolution" label="Resolution" options={OPTIONS.resolution} /></div>
+          {mode === 'story' && <div className="field"><span className="label" id="story-duration-label">Total story length</span><div className="chips story-length" role="group" aria-labelledby="story-duration-label">{STORY_DURATIONS.map((duration, index) => <label className="length-option" key={duration}><input type="radio" name="storyDuration" value={duration} defaultChecked={index === 0} /><span>{duration}<small>{(index + 1) * 3} scenes</small></span></label>)}</div><p className="mode-hint">Each initial scene is 10 seconds. Adjust durations after the outline is created.</p></div>}
+          <div className="field-row three"><Choice id="light" label="Lighting" options={OPTIONS.light} custom /><Choice id="ratio" label="Frame" options={OPTIONS.ratio} />{mode === 'single' && <Choice id="duration" label="Duration" options={OPTIONS.duration} />}<Choice id="resolution" label="Resolution" options={OPTIONS.resolution} /></div>
+          {mode === 'story' && <div className="story-preferences"><div className="field"><label htmlFor="pacing">Narrative pacing</label><select id="pacing" name="pacing" defaultValue="Balanced">{PACING.map(value => <option key={value}>{value}</option>)}</select></div><div className="field"><label htmlFor="ending">Ending direction <span className="hint">(optional)</span></label><input type="text" id="ending" name="ending" maxLength={400} placeholder="The fisherman finds his way home…" /></div></div>}
           <details><summary>Refine atmosphere & sound</summary><div className="advanced"><Choice id="mood" label="Mood" options={OPTIONS.mood} custom /><div className="field"><label htmlFor="audio">Audio direction <span className="hint">(optional)</span></label><textarea id="audio" name="audio" maxLength={300} placeholder="Gentle wind, distant birds, soft footsteps…" /></div></div></details>
           {siteKey && <div className="captcha" ref={turnstileRef} />}
           {error && <p className="form-error" role="alert">{error}</p>}
-          <button className="generate" type="submit" disabled={busy}><span>{busy ? 'Directing your scene…' : 'Craft my prompt'}</span><span aria-hidden="true">{busy ? '···' : '→'}</span></button>
+          <button className="generate" type="submit" disabled={busy}><span>{busy ? (mode === 'story' ? 'Directing your story…' : 'Directing your scene…') : (mode === 'story' ? 'Build my story' : 'Craft my prompt')}</span><span aria-hidden="true">{busy ? '···' : '→'}</span></button>
           <p className="privacy">Powered by Kimi-k3 · Your ideas are not stored</p>
         </form>
-        <section className="panel output" aria-label="Generated prompt">
+        {mode === 'single' ? <section className="panel output" aria-label="Generated prompt">
           <div className="visual"><Scene /><div className="visual-top"><span className="visual-label">Visual study / 001</span><span className="live">Live canvas</span></div><div className="visual-bottom"><div><div className="scene-name">Stillness, in motion.</div><div className="scene-meta">{meta}</div></div><div className="frame-icon" aria-hidden="true">↗</div></div></div>
           <div className="result-body">
             <div className="result-top"><div className="tabs" role="tablist" aria-label="Prompt results" onKeyDown={event => {
@@ -151,9 +230,9 @@ export default function Home() {
               event.preventDefault(); const tabs = ['prompt', 'negative'], next = tabs[(tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : -1) + 2) % 2]; setTab(next); document.getElementById('tab-' + next).focus();
             }}>{['prompt', 'negative'].map(item => <button className={`tab ${tab === item ? 'active' : ''}`} role="tab" aria-selected={tab === item} aria-controls="result" id={`tab-${item}`} key={item} onClick={() => setTab(item)}>{item === 'prompt' ? 'Seedance prompt' : 'Exclusions'}</button>)}</div><button className="icon-button" type="button" aria-label="Clear prompt" onClick={() => { setResults({}); notify('Canvas cleared'); }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg></button></div>
             <p className="prompt-output" id="result" role="tabpanel" aria-labelledby={`tab-${tab}`} aria-busy={busy}>{busy ? 'Kimi is shaping your direction into a cinematic prompt…' : results[tab] || (Object.keys(results).length ? 'No notes for this section.' : initialResult)}</p>
-            <div className="output-footer"><span><span className="tiny-spark">✦</span> Designed for visual precision</span><button className="copy-main" type="button" onClick={copy}>Copy prompt <span aria-hidden="true">⧉</span></button></div>
+            <div className="output-footer"><span><span className="tiny-spark">✦</span> Designed for visual precision</span><button className="copy-main" type="button" onClick={() => copy()}>Copy prompt <span aria-hidden="true">⧉</span></button></div>
           </div>
-        </section>
+        </section> : <section className="panel story-output" aria-label="Story prompt plan" aria-busy={busy}><StoryResults story={story} setStory={setStory} direction={storyDirection} copy={copy} busy={busy} regenerate={regenerate} finalize={finalize} tokenReady={!siteKey || Boolean(token)} /></section>}
       </section>
       <footer className="footer"><span>CRAFTED FOR <b>SEEDANCE 2.5</b></span><nav className="socials" aria-label="Social profiles"><a href="https://www.facebook.com/halim91" target="_blank" rel="noopener noreferrer">Facebook <span aria-hidden="true">↗</span></a><a href="https://www.threads.com/@halimmok.exe" target="_blank" rel="noopener noreferrer">Threads <span aria-hidden="true">↗</span></a></nav></footer>
     </main>

@@ -27,6 +27,12 @@ Open `http://localhost:3000`. Local development bypasses Turnstile and rate limi
 
 Copy `.env.example` to `.env.local`; real secrets must never be committed. `.gitignore` excludes both environment files.
 
+## Story workflow
+
+Long story mode first creates an editable outline for a 30-, 60-, or 90-second story. Adjust narrative pacing, the optional ending, individual actions, settings, camera controls, lighting, mood, audio, transitions, continuity locks, and 5–15-second scene durations. Add, remove, duplicate, or reorder scenes before approving the outline.
+
+Approval generates an editable continuity guide and standalone Seedance prompts. Approved scene metadata remains server-authoritative: Kimi supplies continuity and prompt text, not replacement controls. Individual scenes support full regeneration or prompt-only rewriting. Stories are limited to 12 scenes and 180 seconds. Every generation request uses Turnstile and the shared rate limit; complete verification again after each request.
+
 ## Deploy to Vercel
 
 Push these files to a GitHub repository, import the repository at https://vercel.com/new, and keep the detected Next.js settings. Add all seven environment variables for Production. Create a free Upstash Redis database and a Cloudflare Turnstile widget, then add your production hostname to the widget's allowed hostnames.

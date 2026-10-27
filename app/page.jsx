@@ -57,7 +57,7 @@ function Scene() {
 
 const fieldLabels = { character: 'Character appearance', wardrobe: 'Wardrobe', props: 'Recurring props', environment: 'Environment', style: 'Visual style', details: 'Other recurring details' };
 
-function StoryResults({ story, setStory, direction, copy, busy, regenerate, finalize, tokenReady }) {
+function StoryResults({ story, setStory, direction, copy, download, busy, regenerate, finalize, tokenReady }) {
   const [open, setOpen] = useState(0);
   if (!story && !busy) return <div className="story-empty"><p className="eyebrow">Long story mode</p><h3>Your story.<br /><em>Your direction.</em></h3><p>Shape the outline first. Adjust every scene, lock continuity, then create standalone Seedance prompts.</p></div>;
   if (!story) return <div className="story-empty"><h3>Planning your outline…</h3><p>You will review and edit every scene before Kino writes the prompts.</p></div>;
@@ -81,7 +81,7 @@ function StoryResults({ story, setStory, direction, copy, busy, regenerate, fina
       {scene.prompt && <><div className="scene-editor-top"><span>Standalone {scene.duration} Seedance clip</span><button type="button" className="copy-main" onClick={() => copy(scene.prompt)}>Copy prompt <span aria-hidden="true">⧉</span></button></div><textarea className="prompt-editor" aria-label={`Scene ${index + 1} Seedance prompt`} value={scene.prompt} onChange={event => update(index, 'prompt', event.target.value)} maxLength={12000} /></>}
       {!outlined && <div className="regenerate"><button type="button" disabled={busy || !tokenReady} onClick={() => regenerate(index, 'prompt')}>{busy === 'prompt-' + index ? 'Rewriting…' : 'Rewrite prompt only'}</button><button type="button" disabled={busy || !tokenReady} onClick={() => regenerate(index, 'full')}>{busy === 'full-' + index ? 'Regenerating…' : 'Regenerate scene'}</button></div>}
     </div></details>)}</div>
-    <div className="story-actions"><button type="button" disabled={story.scenes.length >= 12 || seconds + 10 > 180} onClick={add}>+ Add scene</button><button type="button" onClick={() => copy(completeStory())}>Copy complete {outlined ? 'outline' : 'story'} ⧉</button></div>
+    <div className="story-actions"><button type="button" disabled={story.scenes.length >= 12 || seconds + 10 > 180} onClick={add}>+ Add scene</button><button type="button" onClick={() => copy(completeStory())}>Copy complete {outlined ? 'outline' : 'story'} ⧉</button>{!outlined && <button type="button" onClick={() => download(completeStory(), 'kino-story-prompts.txt')}>Download prompts ↓</button>}</div>
     {story && !tokenReady && <p className="story-note">Complete human verification again before generating or rewriting.</p>}
     {outlined && <button type="button" className="generate finalize" disabled={busy || !tokenReady || story.scenes.some(scene => !scene.action.trim() || !scene.title.trim())} onClick={finalize}><span>{busy ? 'Writing all prompts…' : 'Approve outline & generate prompts'}</span><span>→</span></button>}
     {!outlined && <p className="story-note">Locks constrain regeneration, not manual edits. Generate each clip separately, then assemble it in your video editor.</p>}</div>;
@@ -201,6 +201,14 @@ export default function Home() {
     catch { notify('Select the text to copy'); }
   }
 
+  function download(text = results[tab], filename = `kino-${tab}.txt`) {
+    if (!text) return notify('Create a prompt first');
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = filename; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   return <>
     <div className="noise" aria-hidden="true" />
     <main className="shell">
@@ -230,9 +238,9 @@ export default function Home() {
               event.preventDefault(); const tabs = ['prompt', 'negative'], next = tabs[(tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : -1) + 2) % 2]; setTab(next); document.getElementById('tab-' + next).focus();
             }}>{['prompt', 'negative'].map(item => <button className={`tab ${tab === item ? 'active' : ''}`} role="tab" aria-selected={tab === item} aria-controls="result" id={`tab-${item}`} key={item} onClick={() => setTab(item)}>{item === 'prompt' ? 'Seedance prompt' : 'Exclusions'}</button>)}</div><button className="icon-button" type="button" aria-label="Clear prompt" onClick={() => { setResults({}); notify('Canvas cleared'); }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg></button></div>
             <p className="prompt-output" id="result" role="tabpanel" aria-labelledby={`tab-${tab}`} aria-busy={busy}>{busy ? 'Kimi is shaping your direction into a cinematic prompt…' : results[tab] || (Object.keys(results).length ? 'No notes for this section.' : initialResult)}</p>
-            <div className="output-footer"><span><span className="tiny-spark">✦</span> Designed for visual precision</span><button className="copy-main" type="button" onClick={() => copy()}>Copy prompt <span aria-hidden="true">⧉</span></button></div>
+            <div className="output-footer"><span><span className="tiny-spark">✦</span> Designed for visual precision</span><button className="copy-main" type="button" onClick={() => download()}>Download ↓</button><button className="copy-main" type="button" onClick={() => copy()}>Copy prompt <span aria-hidden="true">⧉</span></button></div>
           </div>
-        </section> : <section className="panel story-output" aria-label="Story prompt plan" aria-busy={busy}><StoryResults story={story} setStory={setStory} direction={storyDirection} copy={copy} busy={busy} regenerate={regenerate} finalize={finalize} tokenReady={!siteKey || Boolean(token)} /></section>}
+        </section> : <section className="panel story-output" aria-label="Story prompt plan" aria-busy={busy}><StoryResults story={story} setStory={setStory} direction={storyDirection} copy={copy} download={download} busy={busy} regenerate={regenerate} finalize={finalize} tokenReady={!siteKey || Boolean(token)} /></section>}
       </section>
       <footer className="footer"><span>CRAFTED FOR <b>SEEDANCE 2.5</b></span><nav className="socials" aria-label="Social profiles"><a href="https://www.facebook.com/halim91" target="_blank" rel="noopener noreferrer">Facebook <span aria-hidden="true">↗</span></a><a href="https://www.threads.com/@halimmok.exe" target="_blank" rel="noopener noreferrer">Threads <span aria-hidden="true">↗</span></a></nav></footer>
     </main>
